@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ProductManagementIQ – Lenny's Podcast Insights</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0d1117;
+      --surface:  #161b22;
+      --border:   rgba(255,255,255,0.08);
+      --accent:   #f97316;
+      --accent2:  #8b5cf6;
+      --text:     #e6edf3;
+      --muted:    #7d8590;
+      --success:  #3fb950;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── TOP BAR ── */
+    header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 18px 32px;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: rgba(13,17,23,0.85);
+      backdrop-filter: blur(12px);
+      z-index: 100;
+    }
+
+    .logo {
+      font-size: 1.45rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .logo-sub { font-size: 0.78rem; color: var(--muted); font-weight: 400; margin-left: 4px; }
+
+    .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #555; transition: background 0.4s;
+    }
+    .status-dot.online { background: var(--success); box-shadow: 0 0 6px var(--success); }
+
+    .status-label { font-size: 0.78rem; color: var(--muted); }
+
+    /* ── LAYOUT ── */
+    .layout {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      min-height: calc(100vh - 61px);
+    }
+
+    /* ── SIDEBAR ── */
+    aside {
+      border-right: 1px solid var(--border);
+      padding: 24px 16px;
+      overflow-y: auto;
+    }
+
+    .aside-title {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      font-weight: 700;
+      margin-bottom: 12px;
+      padding: 0 8px;
+    }
+
+    .topic-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      padding: 9px 12px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text);
+      font-size: 0.9rem;
+      cursor: pointer;
+      text-align: left;
+      transition: background 0.15s;
+      margin-bottom: 2px;
+    }
+
+    .topic-btn:hover { background: rgba(255,255,255,0.06); }
+    .topic-btn.active { background: rgba(249,115,22,0.15); color: var(--accent); font-weight: 600; }
+    .topic-btn .t-icon { font-size: 1.1rem; width: 22px; text-align: center; }
+
+    .sidebar-divider { border: none; border-top: 1px solid var(--border); margin: 16px 8px; }
+
+    /* ── MAIN ── */
+    main { padding: 32px; overflow-y: auto; }
+
+    /* search bar */
+    .search-wrap {
+      position: relative;
+      margin-bottom: 28px;
+    }
+
+    .search-wrap input {
+      width: 100%;
+      padding: 14px 52px 14px 20px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      color: var(--text);
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .search-wrap input::placeholder { color: var(--muted); }
+    .search-wrap input:focus { border-color: var(--accent); }
+
+    .search-btn {
+      position: absolute;
+      right: 12px; top: 50%;
+      transform: translateY(-50%);
+      background: var(--accent);
+      border: none;
+      border-radius: 8px;
+      width: 34px; height: 34px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      font-size: 16px;
+      transition: opacity 0.2s;
+    }
+    .search-btn:hover { opacity: 0.85; }
+
+    /* section title */
+    .section-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .section-meta {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 24px;
+    }
+
+    /* ── CARDS GRID ── */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+      transition: border-color 0.2s, transform 0.15s;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    .card:hover { border-color: rgba(249,115,22,0.4); transform: translateY(-2px); }
+    .card:hover::before { opacity: 1; }
+
+    .card-guest {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .card-title {
+      font-size: 1rem;
+      font-weight: 700;
+      line-height: 1.4;
+      margin-bottom: 10px;
+      color: var(--text);
+    }
+
+    .card-excerpt {
+      font-size: 0.86rem;
+      color: var(--muted);
+      line-height: 1.6;
+      display: -webkit-box;
+      -webkit-line-clamp: 4;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .card-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 14px;
+    }
+
+    .tag {
+      font-size: 0.72rem;
+      background: rgba(139,92,246,0.15);
+      color: #a78bfa;
+      border: 1px solid rgba(139,92,246,0.2);
+      padding: 3px 10px;
+      border-radius: 50px;
+      font-weight: 600;
+    }
+
+    /* ── EPISODE DETAIL DRAWER ── */
+    .drawer-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 200;
+      backdrop-filter: blur(4px);
+    }
+
+    .drawer-overlay.open { display: flex; align-items: flex-start; justify-content: flex-end; }
+
+    .drawer {
+      width: min(680px, 95vw);
+      height: 100vh;
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      overflow-y: auto;
+      padding: 32px;
+      animation: slideIn 0.3s ease;
+    }
+
+    @keyframes slideIn {
+      from { transform: translateX(100%); }
+      to   { transform: translateX(0); }
+    }
+
+    .drawer-close {
+      float: right;
+      background: rgba(255,255,255,0.08);
+      border: none;
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 18px;
+      width: 36px; height: 36px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.2s;
+    }
+    .drawer-close:hover { background: rgba(255,255,255,0.15); }
+
+    .drawer-guest { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); font-weight: 700; margin-top: 44px; margin-bottom: 8px; }
+    .drawer-title { font-size: 1.5rem; font-weight: 800; line-height: 1.35; margin-bottom: 20px; }
+
+    .drawer-body {
+      font-size: 0.93rem;
+      line-height: 1.8;
+      color: #c9d1d9;
+      white-space: pre-wrap;
+    }
+
+    /* ── SKELETON LOADER ── */
+    .skeleton {
+      background: linear-gradient(90deg, var(--surface) 25%, rgba(255,255,255,0.05) 50%, var(--surface) 75%);
+      background-size: 400% 100%;
+      animation: shimmer 1.4s infinite;
+      border-radius: 8px;
+    }
+
+    @keyframes shimmer {
+      0%   { background-position: 100% 50%; }
+      100% { background-position: 0%   50%; }
+    }
+
+    .skel-card { height: 180px; border-radius: 14px; }
+
+    /* ── STATES ── */
+    .state-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 300px;
+      gap: 12px;
+      color: var(--muted);
+    }
+
+    .state-icon { font-size: 48px; }
+    .state-title { font-size: 1.1rem; font-weight: 600; color: var(--text); }
+    .state-sub { font-size: 0.88rem; text-align: center; max-width: 380px; }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 768px) {
+      .layout { grid-template-columns: 1fr; }
+      aside { display: none; }
+      main { padding: 20px 16px; }
+      header { padding: 14px 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <span class="logo">ProductManagementIQ</span>
+    <span class="logo-sub">powered by Lenny's Podcast</span>
+  </div>
+  <div class="header-right">
+    <div class="status-dot" id="statusDot"></div>
+    <span class="status-label" id="statusLabel">Connecting…</span>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- SIDEBAR -->
+  <aside>
+    <div class="aside-title">Explore Topics</div>
+
+    <button class="topic-btn active" data-q="product strategy">
+      <span class="t-icon">🧭</span> Product Strategy
+    </button>
+    <button class="topic-btn" data-q="user research">
+      <span class="t-icon">🔍</span> User Research
+    </button>
+    <button class="topic-btn" data-q="prioritization">
+      <span class="t-icon">📋</span> Prioritization
+    </button>
+    <button class="topic-btn" data-q="product metrics OKR">
+      <span class="t-icon">📊</span> Metrics & OKRs
+    </button>
+    <button class="topic-btn" data-q="product roadmap">
+      <span class="t-icon">🗺️</span> Roadmapping
+    </button>
+    <button class="topic-btn" data-q="go to market launch">
+      <span class="t-icon">🚀</span> Go-to-Market
+    </button>
+    <button class="topic-btn" data-q="team leadership culture">
+      <span class="t-icon">👥</span> Leadership
+    </button>
+    <button class="topic-btn" data-q="growth retention">
+      <span class="t-icon">📈</span> Growth
+    </button>
+    <button class="topic-btn" data-q="AI artificial intelligence product">
+      <span class="t-icon">🤖</span> AI in Product
+    </button>
+    <button class="topic-btn" data-q="startup founder">
+      <span class="t-icon">💡</span> Startups
+    </button>
+    <button class="topic-btn" data-q="pricing monetization">
+      <span class="t-icon">💰</span> Pricing
+    </button>
+    <button class="topic-btn" data-q="design UX">
+      <span class="t-icon">🎨</span> Design & UX
+    </button>
+
+    <hr class="sidebar-divider" />
+
+    <div class="aside-title">Browse</div>
+    <button class="topic-btn" id="btnAllEpisodes">
+      <span class="t-icon">🎙️</span> All Episodes
+    </button>
+  </aside>
+
+  <!-- MAIN CONTENT -->
+  <main>
+    <div class="search-wrap">
+      <input type="text" id="searchInput" placeholder="Search 284 episodes… e.g. &quot;how to set OKRs&quot;" />
+      <button class="search-btn" id="searchBtn">🔎</button>
+    </div>
+
+    <div id="sectionTitle" class="section-title">Product Strategy</div>
+    <div id="sectionMeta" class="section-meta">Insights from Lenny's Podcast</div>
+
+    <div id="content"></div>
+  </main>
+</div>
+
+<!-- DETAIL DRAWER -->
+<div class="drawer-overlay" id="drawerOverlay">
+  <div class="drawer" id="drawer">
+    <button class="drawer-close" id="drawerClose">✕</button>
+    <div class="drawer-guest" id="drawerGuest"></div>
+    <div class="drawer-title" id="drawerTitle"></div>
+    <div class="drawer-body" id="drawerBody"></div>
+  </div>
+</div>
+
+<script>
+const statusDot   = document.getElementById('statusDot');
+const statusLabel = document.getElementById('statusLabel');
+const contentEl   = document.getElementById('content');
+const sectionTitle = document.getElementById('sectionTitle');
+const sectionMeta  = document.getElementById('sectionMeta');
+
+// ── STATUS CHECK ──
+async function checkStatus() {
+  try {
+    const r = await fetch('/api/episodes');
+    if (r.ok) {
+      statusDot.classList.add('online');
+      statusLabel.textContent = 'MCP Connected';
+    } else throw new Error();
+  } catch {
+    statusLabel.textContent = 'Offline';
+  }
+}
+checkStatus();
+
+// ── SKELETON ──
+function showSkeletons(n = 6) {
+  contentEl.innerHTML = `<div class="cards-grid">${
+    Array.from({length: n}, () => '<div class="skeleton skel-card"></div>').join('')
+  }</div>`;
+}
+
+// ── PARSE RESULT ──
+function parseContent(raw) {
+  if (!raw) return [];
+  // MCP tool results come back as an array of content blocks
+  const text = Array.isArray(raw.content)
+    ? raw.content.map(c => c.text || '').join('\n')
+    : (typeof raw === 'string' ? raw : JSON.stringify(raw, null, 2));
+  return text;
+}
+
+// ── RENDER SEARCH RESULTS ──
+function renderResults(text, query) {
+  // Split into episode chunks by looking for patterns like "Episode:" or guest names in bold
+  const chunks = splitIntoChunks(text);
+
+  if (chunks.length === 0) {
+    contentEl.innerHTML = `
+      <div class="state-box">
+        <div class="state-icon">🔭</div>
+        <div class="state-title">No results found</div>
+        <div class="state-sub">Try a different search term or explore a topic from the sidebar.</div>
+      </div>`;
+    return;
+  }
+
+  sectionMeta.textContent = `${chunks.length} result${chunks.length !== 1 ? 's' : ''} for "${query}"`;
+
+  const grid = document.createElement('div');
+  grid.className = 'cards-grid';
+
+  chunks.forEach(chunk => {
+    const card = buildCard(chunk);
+    grid.appendChild(card);
+  });
+
+  contentEl.innerHTML = '';
+  contentEl.appendChild(grid);
+}
+
+// ── RENDER EPISODE LIST ──
+function renderEpisodeList(text) {
+  const lines = text.split('\n').filter(l => l.trim());
+  const items = lines.map(l => l.replace(/^\d+\.\s*/, '').replace(/^[-*]\s*/, '').trim()).filter(Boolean);
+
+  sectionTitle.textContent = 'All Episodes';
+  sectionMeta.textContent  = `${items.length} episodes available`;
+
+  if (items.length === 0) {
+    contentEl.innerHTML = `<div class="state-box"><div class="state-icon">📭</div><div class="state-title">No episodes found</div></div>`;
+    return;
+  }
+
+  const grid = document.createElement('div');
+  grid.className = 'cards-grid';
+
+  items.forEach(name => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-guest">🎙️ Episode</div>
+      <div class="card-title">${escHtml(name)}</div>
+      <div class="card-excerpt">Click to load insights from this episode.</div>
+      <div class="card-tags"><span class="tag">Lenny's Podcast</span></div>`;
+    card.addEventListener('click', () => loadEpisode(name));
+    grid.appendChild(card);
+  });
+
+  contentEl.innerHTML = '';
+  contentEl.appendChild(grid);
+}
+
+// ── LOAD EPISODE DETAIL ──
+async function loadEpisode(guest) {
+  openDrawer(guest, 'Loading…', 'Fetching transcript…');
+  try {
+    const r = await fetch(`/api/episode/${encodeURIComponent(guest)}`);
+    const json = await r.json();
+    if (!json.ok) throw new Error(json.error);
+    const text = parseContent(json.data);
+    const title = guest;
+    openDrawer(guest, title, text);
+  } catch (err) {
+    openDrawer(guest, 'Error', err.message);
+  }
+}
+
+// ── SEARCH ──
+async function doSearch(query) {
+  showSkeletons();
+  sectionTitle.textContent = `"${query}"`;
+  sectionMeta.textContent  = 'Searching…';
+
+  try {
+    const r = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+    const json = await r.json();
+    if (!json.ok) throw new Error(json.error);
+    const text = parseContent(json.data);
+    renderResults(text, query);
+  } catch (err) {
+    contentEl.innerHTML = `
+      <div class="state-box">
+        <div class="state-icon">⚠️</div>
+        <div class="state-title">Search failed</div>
+        <div class="state-sub">${escHtml(err.message)}</div>
+      </div>`;
+    sectionMeta.textContent = '';
+  }
+}
+
+// ── TOPIC CLICK ──
+async function loadTopic(query, label) {
+  showSkeletons();
+  sectionTitle.textContent = label;
+  sectionMeta.textContent  = 'Loading insights…';
+
+  try {
+    const r = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+    const json = await r.json();
+    if (!json.ok) throw new Error(json.error);
+    const text = parseContent(json.data);
+    renderResults(text, query);
+  } catch (err) {
+    contentEl.innerHTML = `
+      <div class="state-box">
+        <div class="state-icon">⚠️</div>
+        <div class="state-title">Could not load topic</div>
+        <div class="state-sub">${escHtml(err.message)}</div>
+      </div>`;
+  }
+}
+
+// ── LOAD ALL EPISODES ──
+async function loadAllEpisodes() {
+  showSkeletons(8);
+  sectionTitle.textContent = 'All Episodes';
+  sectionMeta.textContent  = 'Loading…';
+
+  try {
+    const r = await fetch('/api/episodes');
+    const json = await r.json();
+    if (!json.ok) throw new Error(json.error);
+    const text = parseContent(json.data);
+    renderEpisodeList(text);
+  } catch (err) {
+    contentEl.innerHTML = `
+      <div class="state-box">
+        <div class="state-icon">⚠️</div>
+        <div class="state-title">Could not load episodes</div>
+        <div class="state-sub">${escHtml(err.message)}</div>
+      </div>`;
+  }
+}
+
+// ── HELPERS ──
+function splitIntoChunks(text) {
+  if (!text || text.trim().length < 50) return [];
+
+  // Try splitting on double newlines (typical MCP result separators)
+  const blocks = text.split(/\n{2,}/).filter(b => b.trim().length > 40);
+  if (blocks.length >= 2) return blocks.map(b => ({ raw: b }));
+
+  // Fallback: split every ~600 chars at paragraph boundary
+  const chunks = [];
+  let pos = 0;
+  while (pos < text.length) {
+    let end = Math.min(pos + 600, text.length);
+    const nl = text.lastIndexOf('\n', end);
+    if (nl > pos + 200) end = nl;
+    chunks.push({ raw: text.slice(pos, end).trim() });
+    pos = end;
+  }
+  return chunks.filter(c => c.raw.length > 40);
+}
+
+function buildCard(chunk) {
+  const raw = chunk.raw || '';
+  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+
+  // Try to detect guest name from first bold or ALL CAPS line
+  let guest = '';
+  let titleLine = '';
+  let bodyLines = lines;
+
+  const firstLine = lines[0] || '';
+  if (/^[A-Z][A-Za-z\s\-\.]+$/.test(firstLine) && firstLine.length < 60) {
+    guest = firstLine;
+    bodyLines = lines.slice(1);
+  }
+
+  titleLine = bodyLines[0] || '';
+  const excerpt = bodyLines.slice(1).join(' ').trim();
+
+  // Extract keywords as tags
+  const pmKeywords = ['strategy','roadmap','metrics','OKR','growth','retention','pricing',
+    'research','design','leadership','AI','launch','prioritization','discovery'];
+  const tags = pmKeywords.filter(kw => raw.toLowerCase().includes(kw.toLowerCase())).slice(0, 3);
+
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `
+    ${guest ? `<div class="card-guest">🎙️ ${escHtml(guest)}</div>` : '<div class="card-guest">🎙️ Lenny\'s Podcast</div>'}
+    <div class="card-title">${escHtml(titleLine || 'Insight')}</div>
+    <div class="card-excerpt">${escHtml(excerpt || raw)}</div>
+    ${tags.length ? `<div class="card-tags">${tags.map(t => `<span class="tag">${t}</span>`).join('')}</div>` : ''}
+  `;
+  card.addEventListener('click', () => openDrawer(guest || 'Lenny\'s Podcast', titleLine || 'Insight', raw));
+  return card;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── DRAWER ──
+const overlay = document.getElementById('drawerOverlay');
+
+function openDrawer(guest, title, body) {
+  document.getElementById('drawerGuest').textContent = guest;
+  document.getElementById('drawerTitle').textContent = title;
+  document.getElementById('drawerBody').textContent  = body;
+  overlay.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeDrawer() {
+  overlay.classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+document.getElementById('drawerClose').addEventListener('click', closeDrawer);
+overlay.addEventListener('click', e => { if (e.target === overlay) closeDrawer(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+
+// ── EVENTS ──
+document.querySelectorAll('.topic-btn[data-q]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.topic-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const q     = btn.dataset.q;
+    const label = btn.textContent.trim().replace(/^[^\w]+/, '');
+    sectionTitle.textContent = label;
+    loadTopic(q, label);
+  });
+});
+
+document.getElementById('btnAllEpisodes').addEventListener('click', () => {
+  document.querySelectorAll('.topic-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('btnAllEpisodes').classList.add('active');
+  loadAllEpisodes();
+});
+
+const searchInput = document.getElementById('searchInput');
+const searchBtn   = document.getElementById('searchBtn');
+
+searchBtn.addEventListener('click', () => {
+  const q = searchInput.value.trim();
+  if (q) {
+    document.querySelectorAll('.topic-btn').forEach(b => b.classList.remove('active'));
+    doSearch(q);
+  }
+});
+
+searchInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') searchBtn.click();
+});
+
+// ── INITIAL LOAD ──
+loadTopic('product strategy', 'Product Strategy');
+</script>
+</body>
+</html>

@@ -186,7 +186,7 @@ async function init() {
       guest_name: ep.guest_name,
       title: ep.title,
       description: ep.description || '',
-      topics_text: (ep.topics || []).join(' '),
+      topics_text: (ep.topics || []).map(t => t + ' ' + t.replace(/-/g, ' ')).join(' '),
       themes_text: (ep.key_themes || []).map(t => t.theme + ' ' + t.description).join(' '),
       insights_text: (ep.key_insights || []).map(i => i.quote + ' ' + i.insight + ' ' + (i.topics||[]).join(' ')).join(' '),
     });

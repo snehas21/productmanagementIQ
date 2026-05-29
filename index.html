@@ -181,7 +181,7 @@ async function init() {
   });
 
   for (const ep of episodes) {
-    searchIdx.add({
+    await searchIdx.addAsync({
       id: ep.id,
       guest_name: ep.guest_name,
       title: ep.title,
@@ -197,9 +197,9 @@ async function init() {
   loadTopic('product strategy', 'Product Strategy');
 }
 
-function search(q) {
+async function search(q) {
   if (!searchIdx) return [];
-  const results = searchIdx.search(q, { limit: 40, enrich: true });
+  const results = await searchIdx.searchAsync(q, { limit: 40, enrich: true });
   const seen = new Set();
   const out = [];
   for (const field of results) {
@@ -365,7 +365,7 @@ function loadTopic(q, label) {
   _lastLabel = label;
   showSkeletons();
   setMeta(label, 'Loading…');
-  setTimeout(() => showInsightCards(search(q), q, label), 0);
+  search(q).then(eps => showInsightCards(eps, q, label));
 }
 
 // ── EVENTS ──
@@ -401,7 +401,7 @@ document.getElementById('searchBtn').addEventListener('click', () => {
   _lastLabel = `"${q}"`;
   showSkeletons();
   setMeta(`"${q}"`, 'Searching…');
-  setTimeout(() => showInsightCards(search(q), q, `"${q}"`), 0);
+  search(q).then(eps => showInsightCards(eps, q, `"${q}"`));
 });
 document.getElementById('searchInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('searchBtn').click();

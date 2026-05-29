@@ -1,144 +1,159 @@
 import express from 'express';
 import { readFileSync } from 'fs';
-import { createRequire } from 'module';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
 const app = express();
 app.use(express.json());
 app.use(express.static('public'));
 
-// ── LOCAL DATA (bundled from edisoncruz/lennys-wisdom-mcp) ──
-const episodes = JSON.parse(readFileSync('./data/episodes.json', 'utf8'));
+// ── BUNDLED DATA (20 curated episodes, always available) ──
+const bundledEpisodes = JSON.parse(readFileSync('./data/episodes.json', 'utf8'));
 
-// ── MCP-STYLE TOOL IMPLEMENTATIONS ──
+// ── MCP CLIENT (connects to local lenny-mcp subprocess if running on :3001) ──
+const MCP_URL = process.env.MCP_URL || 'http://localhost:3001/mcp';
+let mcpAvailable = false;
 
-function list_episodes() {
-  const lines = episodes.map(ep => `${ep.guest_name} — ${ep.title}`);
-  return { content: [{ type: 'text', text: lines.join('\n') }] };
+async function callMCP(toolName, args) {
+  const client = new Client({ name: 'productmanagementiq', version: '1.0.0' });
+  const transport = new StreamableHTTPClientTransport(new URL(MCP_URL));
+  await client.connect(transport);
+  try {
+    return await client.callTool({ name: toolName, arguments: args });
+  } finally {
+    await client.close();
+  }
 }
 
-function search_transcripts({ query }) {
-  const q = query.toLowerCase();
-  const results = [];
+async function checkMCP() {
+  try {
+    await callMCP('list_episodes', {});
+    mcpAvailable = true;
+    console.log('MCP server connected at', MCP_URL);
+  } catch {
+    mcpAvailable = false;
+    console.log('MCP unavailable — using bundled data');
+  }
+}
+checkMCP();
 
-  for (const ep of episodes) {
-    const matchingInsights = ep.key_insights.filter(ins =>
+// ── BUNDLED FALLBACK TOOLS ──
+
+function bundledSearch(query) {
+  const q = query.toLowerCase();
+  const out = [];
+  for (const ep of bundledEpisodes) {
+    const matched = ep.key_insights.filter(ins =>
       ins.quote.toLowerCase().includes(q) ||
       ins.insight.toLowerCase().includes(q) ||
       ins.context.toLowerCase().includes(q) ||
-      ins.topics.some(t => t.toLowerCase().includes(q))
+      (ins.topics || []).some(t => t.toLowerCase().includes(q))
     );
-
-    const themeMatch = ep.key_themes?.filter(t =>
-      t.theme.toLowerCase().includes(q) || t.description.toLowerCase().includes(q)
-    ) || [];
-
-    const topicMatch = ep.topics?.some(t => t.toLowerCase().includes(q));
+    const topicMatch = (ep.topics || []).some(t => t.toLowerCase().includes(q));
     const titleMatch = ep.title.toLowerCase().includes(q) || ep.description.toLowerCase().includes(q);
-
-    if (matchingInsights.length > 0 || themeMatch.length > 0 || topicMatch || titleMatch) {
-      const insightsToShow = matchingInsights.length > 0 ? matchingInsights : ep.key_insights.slice(0, 3);
-      results.push({
-        guest: ep.guest_name,
-        title: ep.title,
-        insights: insightsToShow.slice(0, 4),
-        themes: themeMatch.slice(0, 2),
-        topics: ep.topics,
-      });
+    const themeMatch = (ep.key_themes || []).some(t =>
+      t.theme.toLowerCase().includes(q) || t.description.toLowerCase().includes(q)
+    );
+    if (matched.length > 0 || topicMatch || titleMatch || themeMatch) {
+      out.push({ ...ep, _matched_insights: matched.length > 0 ? matched : ep.key_insights.slice(0, 3) });
     }
   }
-
-  if (results.length === 0) {
-    return { content: [{ type: 'text', text: `No results found for "${query}"` }] };
-  }
-
-  const text = results.slice(0, 12).map(r => {
-    const insightLines = r.insights.map(i =>
-      `• "${i.quote}"\n  → ${i.insight}`
-    ).join('\n\n');
-    return `## ${r.guest}\n**${r.title}**\n\n${insightLines}`;
-  }).join('\n\n---\n\n');
-
-  return { content: [{ type: 'text', text }] };
-}
-
-function get_episode({ guest }) {
-  const ep = episodes.find(e =>
-    e.guest_name.toLowerCase().includes(guest.toLowerCase()) ||
-    e.id.toLowerCase().includes(guest.toLowerCase())
-  );
-
-  if (!ep) {
-    return { content: [{ type: 'text', text: `Episode not found: ${guest}` }] };
-  }
-
-  const insightLines = ep.key_insights.map(i =>
-    `• [${i.timestamp}] "${i.quote}"\n  → ${i.insight}`
-  ).join('\n\n');
-
-  const themes = ep.key_themes?.map(t => `• ${t.theme}: ${t.description}`).join('\n') || '';
-
-  const text = `# ${ep.guest_name}\n**${ep.title}**\n\n${ep.description}\n\n## Key Themes\n${themes}\n\n## Insights\n${insightLines}`;
-
-  return { content: [{ type: 'text', text }] };
+  return out.slice(0, 20);
 }
 
 // ── REST API ──
 
-app.get('/api/episodes', (req, res) => {
+app.get('/api/status', (req, res) => {
+  res.json({ mcp: mcpAvailable, bundled: bundledEpisodes.length, mcpUrl: MCP_URL });
+});
+
+// MCP-proxied endpoints (fall back to bundled data)
+app.get('/api/episodes', async (req, res) => {
   try {
-    res.json({ ok: true, data: list_episodes() });
+    if (mcpAvailable) {
+      const result = await callMCP('list_episodes', {});
+      res.json({ ok: true, source: 'mcp', data: result });
+    } else {
+      const lines = bundledEpisodes.map(ep => `${ep.guest_name} — ${ep.title}`).join('\n');
+      res.json({ ok: true, source: 'bundled', data: { content: [{ type: 'text', text: lines }] } });
+    }
   } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
+    mcpAvailable = false;
+    const lines = bundledEpisodes.map(ep => `${ep.guest_name} — ${ep.title}`).join('\n');
+    res.json({ ok: true, source: 'bundled', data: { content: [{ type: 'text', text: lines }] } });
   }
 });
 
-app.get('/api/search', (req, res) => {
+app.get('/api/search', async (req, res) => {
   const { q } = req.query;
-  if (!q) return res.status(400).json({ ok: false, error: 'q parameter required' });
+  if (!q) return res.status(400).json({ ok: false, error: 'q required' });
   try {
-    res.json({ ok: true, data: search_transcripts({ query: q }) });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
+    if (mcpAvailable) {
+      const result = await callMCP('search_transcripts', { query: q });
+      res.json({ ok: true, source: 'mcp', data: result });
+    } else {
+      throw new Error('MCP unavailable');
+    }
+  } catch {
+    mcpAvailable = false;
+    const text = bundledEpisodes
+      .filter(ep => ep.title.toLowerCase().includes(q.toLowerCase()) || (ep.topics||[]).some(t=>t.toLowerCase().includes(q.toLowerCase())))
+      .map(ep => `## ${ep.guest_name}\n**${ep.title}**`)
+      .join('\n\n');
+    res.json({ ok: true, source: 'bundled', data: { content: [{ type: 'text', text }] } });
   }
 });
 
-app.get('/api/episode/:guest', (req, res) => {
+app.get('/api/episode/:guest', async (req, res) => {
+  const { guest } = req.params;
   try {
-    res.json({ ok: true, data: get_episode({ guest: req.params.guest }) });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
+    if (mcpAvailable) {
+      const result = await callMCP('get_episode', { guest });
+      res.json({ ok: true, source: 'mcp', data: result });
+    } else {
+      throw new Error('MCP unavailable');
+    }
+  } catch {
+    mcpAvailable = false;
+    const ep = bundledEpisodes.find(e => e.guest_name.toLowerCase().includes(guest.toLowerCase()));
+    if (!ep) return res.json({ ok: false, error: 'Not found' });
+    res.json({ ok: true, source: 'bundled', data: { content: [{ type: 'text', text: ep.key_insights.map(i => `• "${i.quote}"\n  → ${i.insight}`).join('\n\n') }] } });
   }
 });
 
-// Raw structured data endpoints for the frontend
-app.get('/api/data/episodes', (req, res) => res.json(episodes));
+// Structured data endpoints (always use bundled data for UI)
+app.get('/api/data/episodes', (req, res) => res.json(bundledEpisodes));
 
 app.get('/api/data/search', (req, res) => {
   const { q } = req.query;
-  if (!q) return res.status(400).json([]);
-  const query = q.toLowerCase();
-  const out = [];
+  if (!q) return res.json([]);
+  res.json(bundledSearch(q));
+});
 
-  for (const ep of episodes) {
-    const matchingInsights = ep.key_insights.filter(ins =>
-      ins.quote.toLowerCase().includes(query) ||
-      ins.insight.toLowerCase().includes(query) ||
-      (ins.topics||[]).some(t => t.toLowerCase().includes(query))
-    );
-    const topicMatch = ep.topics?.some(t => t.toLowerCase().includes(query));
-    const titleMatch = ep.title.toLowerCase().includes(query) || ep.description.toLowerCase().includes(query);
-    const themeMatch = ep.key_themes?.some(t =>
-      t.theme.toLowerCase().includes(query) || t.description.toLowerCase().includes(query)
-    );
-
-    if (matchingInsights.length > 0 || topicMatch || titleMatch || themeMatch) {
-      out.push({
-        ...ep,
-        _matched_insights: matchingInsights.length > 0 ? matchingInsights : ep.key_insights.slice(0, 3),
-      });
-    }
+// MCP raw search — returns transcript excerpts from all 303 episodes
+app.get('/api/mcp/search', async (req, res) => {
+  const { q } = req.query;
+  if (!q) return res.status(400).json({ ok: false, error: 'q required' });
+  if (!mcpAvailable) return res.json({ ok: false, error: 'MCP not available', fallback: bundledSearch(q) });
+  try {
+    const result = await callMCP('search_transcripts', { query: q });
+    res.json({ ok: true, data: result });
+  } catch (err) {
+    mcpAvailable = false;
+    res.json({ ok: false, error: err.message, fallback: bundledSearch(q) });
   }
-  res.json(out.slice(0, 20));
+});
+
+app.get('/api/mcp/episode/:guest', async (req, res) => {
+  const { guest } = req.params;
+  if (!mcpAvailable) return res.json({ ok: false, error: 'MCP not available' });
+  try {
+    const result = await callMCP('get_episode', { guest });
+    res.json({ ok: true, data: result });
+  } catch (err) {
+    mcpAvailable = false;
+    res.json({ ok: false, error: err.message });
+  }
 });
 
 const PORT = process.env.PORT || 3000;

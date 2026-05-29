@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ProductManagementIQ – Lenny's Podcast Insights</title>
+  <script src="https://cdn.jsdelivr.net/npm/flexsearch@0.7.43/dist/flexsearch.bundle.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0d1117; --surface: #161b22; --border: rgba(255,255,255,0.08);
+      --accent: #f97316; --accent2: #8b5cf6; --text: #e6edf3;
+      --muted: #7d8590; --green: #3fb950; --blue: #58a6ff;
+    }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    header {
+      display: flex; align-items: center; gap: 16px; padding: 16px 28px;
+      border-bottom: 1px solid var(--border); position: sticky; top: 0;
+      background: rgba(13,17,23,0.92); backdrop-filter: blur(14px); z-index: 100;
+    }
+    .logo { font-size: 1.35rem; font-weight: 800; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .logo-badge { font-size: 0.72rem; background: rgba(249,115,22,0.15); border: 1px solid rgba(249,115,22,0.3); color: var(--accent); padding: 2px 10px; border-radius: 50px; font-weight: 600; margin-left: 6px; vertical-align: middle; }
+    .header-right { margin-left: auto; }
+    .status-pill { display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--muted); background: var(--surface); border: 1px solid var(--border); padding: 4px 12px; border-radius: 50px; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #555; transition: background 0.4s, box-shadow 0.4s; }
+    .dot.online { background: var(--green); box-shadow: 0 0 6px var(--green); }
+
+    .layout { display: grid; grid-template-columns: 230px 1fr; min-height: calc(100vh - 57px); }
+
+    aside { border-right: 1px solid var(--border); padding: 20px 12px; position: sticky; top: 57px; height: calc(100vh - 57px); overflow-y: auto; }
+    .aside-section { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); font-weight: 700; padding: 0 10px; margin: 16px 0 8px; }
+    .aside-section:first-child { margin-top: 0; }
+    .nav-btn { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 10px; border: none; border-radius: 8px; background: transparent; color: var(--muted); font-size: 0.875rem; cursor: pointer; text-align: left; transition: background 0.15s, color 0.15s; }
+    .nav-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+    .nav-btn.active { background: rgba(249,115,22,0.12); color: var(--accent); font-weight: 600; }
+    .nav-icon { width: 20px; text-align: center; }
+    hr.divider { border: none; border-top: 1px solid var(--border); margin: 12px 10px; }
+
+    main { padding: 28px 32px; }
+    .search-wrap { position: relative; margin-bottom: 24px; }
+    .search-wrap input { width: 100%; padding: 12px 48px 12px 18px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 0.95rem; outline: none; transition: border-color 0.2s; }
+    .search-wrap input::placeholder { color: var(--muted); }
+    .search-wrap input:focus { border-color: rgba(249,115,22,0.5); }
+    .search-btn { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: var(--accent); border: none; border-radius: 7px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 15px; }
+    .search-btn:hover { opacity: 0.85; }
+
+    .page-heading { margin-bottom: 22px; }
+    .page-heading h2 { font-size: 1.35rem; font-weight: 700; }
+    .page-heading p { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
+
+    .cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+    .ins-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; cursor: pointer; transition: border-color 0.2s, transform 0.15s, box-shadow 0.2s; position: relative; overflow: hidden; }
+    .ins-card::after { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, var(--accent), var(--accent2)); opacity: 0; transition: opacity 0.2s; }
+    .ins-card:hover { border-color: rgba(249,115,22,0.35); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+    .ins-card:hover::after { opacity: 1; }
+    .card-byline { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--accent); margin-bottom: 8px; }
+    .card-quote { font-size: 0.9rem; line-height: 1.55; color: #c9d1d9; font-style: italic; padding-left: 12px; border-left: 2px solid rgba(249,115,22,0.4); margin-bottom: 10px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+    .card-insight { font-size: 0.83rem; color: var(--muted); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .card-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; }
+    .card-ts { font-size: 0.72rem; color: var(--muted); }
+    .card-tags { display: flex; gap: 5px; flex-wrap: wrap; }
+    .tag { font-size: 0.68rem; padding: 2px 8px; border-radius: 50px; background: rgba(139,92,246,0.12); border: 1px solid rgba(139,92,246,0.2); color: #a78bfa; font-weight: 600; }
+    .actionable-badge { font-size: 0.68rem; padding: 2px 8px; border-radius: 50px; background: rgba(63,185,80,0.1); border: 1px solid rgba(63,185,80,0.25); color: var(--green); font-weight: 700; }
+
+    .ep-list { display: flex; flex-direction: column; gap: 10px; }
+    .ep-row { display: flex; align-items: flex-start; gap: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; cursor: pointer; transition: border-color 0.2s; }
+    .ep-row:hover { border-color: rgba(249,115,22,0.35); }
+    .ep-avatar { width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent2)); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.9rem; flex-shrink: 0; color: #fff; }
+    .ep-info { flex: 1; min-width: 0; }
+    .ep-name { font-weight: 700; font-size: 0.95rem; }
+    .ep-title { font-size: 0.82rem; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ep-topics { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 7px; }
+    .ep-count { font-size: 0.75rem; color: var(--muted); flex-shrink: 0; align-self: center; }
+
+    /* detail panel */
+    .ep-detail { display: none; }
+    .ep-detail.visible { display: block; }
+    .back-btn { display: inline-flex; align-items: center; gap: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--muted); font-size: 0.85rem; padding: 6px 14px; cursor: pointer; margin-bottom: 24px; }
+    .back-btn:hover { color: var(--text); }
+    .ep-header { margin-bottom: 28px; }
+    .ep-header .guest-label { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); font-weight: 700; margin-bottom: 6px; }
+    .ep-header h1 { font-size: 1.55rem; font-weight: 800; line-height: 1.3; margin-bottom: 10px; }
+    .ep-header .desc { color: var(--muted); font-size: 0.9rem; line-height: 1.65; }
+    .section-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); font-weight: 700; margin: 28px 0 12px; }
+    .themes-list { display: flex; flex-direction: column; gap: 8px; }
+    .theme-row { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; display: flex; gap: 12px; align-items: baseline; }
+    .theme-name { font-weight: 700; font-size: 0.9rem; flex: 1; }
+    .theme-desc { color: var(--muted); font-size: 0.82rem; flex: 2; }
+    .relevance { font-size: 0.72rem; color: var(--accent); font-weight: 700; flex-shrink: 0; }
+    .insights-full { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+    .ins-full { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+    .ins-full blockquote { font-style: italic; font-size: 0.92rem; color: #c9d1d9; line-height: 1.6; padding-left: 14px; border-left: 3px solid var(--accent); margin-bottom: 12px; }
+    .ins-full .insight-text { font-size: 0.85rem; color: var(--text); line-height: 1.55; margin-bottom: 10px; }
+    .ins-full .ins-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .ins-full .ts { font-size: 0.72rem; color: var(--muted); }
+    .fw-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+    .fw-badge { background: rgba(88,166,255,0.1); border: 1px solid rgba(88,166,255,0.2); color: var(--blue); font-size: 0.78rem; padding: 4px 12px; border-radius: 8px; font-weight: 600; }
+
+    .skel { background: linear-gradient(90deg, var(--surface) 25%, rgba(255,255,255,0.05) 50%, var(--surface) 75%); background-size: 400% 100%; animation: shimmer 1.4s infinite; border-radius: 12px; height: 160px; }
+    @keyframes shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+
+    .state-box { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 300px; gap: 12px; color: var(--muted); text-align: center; }
+    .state-icon { font-size: 48px; }
+    .state-title { font-size: 1.05rem; font-weight: 600; color: var(--text); }
+    .state-sub { font-size: 0.85rem; max-width: 380px; line-height: 1.6; }
+
+    @media (max-width: 800px) {
+      .layout { grid-template-columns: 1fr; }
+      aside { display: none; }
+      main { padding: 20px 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <span class="logo">ProductManagementIQ</span>
+  <span class="logo-badge">Lenny's Podcast</span>
+  <div class="header-right">
+    <div class="status-pill">
+      <div class="dot" id="statusDot"></div>
+      <span id="statusLabel">Loading…</span>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside>
+    <div class="aside-section">Topics</div>
+    <button class="nav-btn active" data-q="product strategy" data-label="Product Strategy"><span class="nav-icon">🧭</span>Product Strategy</button>
+    <button class="nav-btn" data-q="user research discovery" data-label="User Research"><span class="nav-icon">🔍</span>User Research</button>
+    <button class="nav-btn" data-q="prioritization roadmap" data-label="Prioritization"><span class="nav-icon">📋</span>Prioritization</button>
+    <button class="nav-btn" data-q="metrics OKR" data-label="Metrics & OKRs"><span class="nav-icon">📊</span>Metrics & OKRs</button>
+    <button class="nav-btn" data-q="go to market launch" data-label="Go-to-Market"><span class="nav-icon">🚀</span>Go-to-Market</button>
+    <button class="nav-btn" data-q="leadership management" data-label="Leadership"><span class="nav-icon">👥</span>Leadership</button>
+    <button class="nav-btn" data-q="growth retention viral" data-label="Growth"><span class="nav-icon">📈</span>Growth</button>
+    <button class="nav-btn" data-q="AI artificial intelligence" data-label="AI in Product"><span class="nav-icon">🤖</span>AI in Product</button>
+    <button class="nav-btn" data-q="startup founder" data-label="Startups"><span class="nav-icon">💡</span>Startups</button>
+    <button class="nav-btn" data-q="pricing monetization" data-label="Pricing"><span class="nav-icon">💰</span>Pricing</button>
+    <button class="nav-btn" data-q="feedback culture" data-label="Feedback & Culture"><span class="nav-icon">💬</span>Feedback & Culture</button>
+    <button class="nav-btn" data-q="career productivity" data-label="Career Growth"><span class="nav-icon">🌱</span>Career Growth</button>
+    <hr class="divider" />
+    <div class="aside-section">Browse</div>
+    <button class="nav-btn" id="btnEpisodes"><span class="nav-icon">🎙️</span>All Episodes</button>
+    <button class="nav-btn" id="btnFrameworks"><span class="nav-icon">🛠️</span>Frameworks</button>
+  </aside>
+
+  <main>
+    <div class="search-wrap">
+      <input type="text" id="searchInput" placeholder='Search 280+ insights… e.g. "how to prioritize" or "growth loops"' />
+      <button class="search-btn" id="searchBtn">🔎</button>
+    </div>
+    <div class="page-heading">
+      <h2 id="pageTitle">Product Strategy</h2>
+      <p id="pageMeta">Insights from Lenny's Podcast</p>
+    </div>
+    <div id="mainContent"></div>
+    <div class="ep-detail" id="epDetail"></div>
+  </main>
+</div>
+
+<script>
+// ── DATA + INDEX ──
+let episodes = [];
+let searchIdx = null;
+
+async function init() {
+  const r = await fetch('data/episodes.json');
+  episodes = await r.json();
+
+  searchIdx = new FlexSearch.Document({
+    document: {
+      id: 'id',
+      index: ['guest_name', 'title', 'description', 'topics_text', 'themes_text', 'insights_text'],
+      store: true,
+    },
+    tokenize: 'forward',
+    resolution: 9,
+    cache: true,
+  });
+
+  for (const ep of episodes) {
+    searchIdx.add({
+      id: ep.id,
+      guest_name: ep.guest_name,
+      title: ep.title,
+      description: ep.description || '',
+      topics_text: (ep.topics || []).join(' '),
+      themes_text: (ep.key_themes || []).map(t => t.theme + ' ' + t.description).join(' '),
+      insights_text: (ep.key_insights || []).map(i => i.quote + ' ' + i.insight + ' ' + (i.topics||[]).join(' ')).join(' '),
+    });
+  }
+
+  document.getElementById('statusDot').className = 'dot online';
+  document.getElementById('statusLabel').textContent = `${episodes.length} episodes loaded`;
+  loadTopic('product strategy', 'Product Strategy');
+}
+
+function search(q) {
+  if (!searchIdx) return [];
+  const results = searchIdx.search(q, { limit: 40, enrich: true });
+  const seen = new Set();
+  const out = [];
+  for (const field of results) {
+    for (const item of (field.result || [])) {
+      const id = item.id || item;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const ep = episodes.find(e => e.id === id);
+      if (ep) out.push(ep);
+    }
+  }
+  return out;
+}
+
+// ── HELPERS ──
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function topicTag(t) { return `<span class="tag">${esc(t.replace(/-/g,' '))}</span>`; }
+
+function getMatchedInsights(ep, q) {
+  if (!q) return ep.key_insights.slice(0, 3);
+  const ql = q.toLowerCase();
+  const matched = ep.key_insights.filter(i =>
+    i.quote.toLowerCase().includes(ql) ||
+    i.insight.toLowerCase().includes(ql) ||
+    (i.topics||[]).some(t => t.toLowerCase().includes(ql))
+  );
+  return matched.length ? matched.slice(0, 3) : ep.key_insights.slice(0, 3);
+}
+
+function insightCard(insight, guestName) {
+  const tags = (insight.topics||[]).slice(0,3).map(topicTag).join('');
+  const badge = insight.actionable ? '<span class="actionable-badge">Actionable</span>' : '';
+  return `
+    <div class="ins-card" onclick='openEpisode(${JSON.stringify(guestName)})'>
+      <div class="card-byline">🎙️ ${esc(guestName)}</div>
+      <div class="card-quote">${esc(insight.quote)}</div>
+      <div class="card-insight">${esc(insight.insight)}</div>
+      <div class="card-footer">
+        <span class="card-ts">${esc(insight.timestamp||'')}</span>
+        <div class="card-tags">${tags}${badge}</div>
+      </div>
+    </div>`;
+}
+
+// ── VIEWS ──
+function setMeta(title, sub) {
+  document.getElementById('pageTitle').textContent = title;
+  document.getElementById('pageMeta').textContent = sub;
+}
+
+function setContent(html) {
+  document.getElementById('mainContent').innerHTML = html;
+  document.getElementById('mainContent').style.display = '';
+  document.getElementById('epDetail').classList.remove('visible');
+}
+
+function showSkeletons() {
+  setContent(`<div class="cards-grid">${Array.from({length:8},()=>'<div class="skel"></div>').join('')}</div>`);
+}
+
+function showInsightCards(eps, q, label) {
+  if (!eps.length) {
+    setContent(`<div class="state-box"><div class="state-icon">🔭</div><div class="state-title">No results</div><div class="state-sub">Try a different term or pick a topic from the sidebar.</div></div>`);
+    setMeta(label, 'No results');
+    return;
+  }
+  const cards = eps.flatMap(ep => getMatchedInsights(ep, q).map(i => insightCard(i, ep.guest_name)));
+  setMeta(label, `${cards.length} insights across ${eps.length} episodes`);
+  setContent(`<div class="cards-grid">${cards.join('')}</div>`);
+}
+
+function showAllEpisodes() {
+  setMeta('All Episodes', `${episodes.length} episodes from Lenny's Podcast`);
+  const rows = episodes.map(ep => {
+    const initials = ep.guest_name.split(' ').map(w=>w[0]).slice(0,2).join('');
+    const topics = (ep.topics||[]).slice(0,4).map(topicTag).join('');
+    return `
+      <div class="ep-row" onclick='openEpisode(${JSON.stringify(ep.guest_name)})'>
+        <div class="ep-avatar">${esc(initials)}</div>
+        <div class="ep-info">
+          <div class="ep-name">${esc(ep.guest_name)}</div>
+          <div class="ep-title">${esc(ep.title)}</div>
+          <div class="ep-topics">${topics}</div>
+        </div>
+        <div class="ep-count">${ep.key_insights?.length||0} insights</div>
+      </div>`;
+  }).join('');
+  setContent(`<div class="ep-list">${rows}</div>`);
+}
+
+function showFrameworks() {
+  setMeta('Frameworks', 'Product frameworks from Lenny\'s Podcast');
+  const cards = episodes.flatMap(ep =>
+    (ep.frameworks_mentioned||[]).map(fw => {
+      const name = typeof fw==='string' ? fw : fw.name;
+      const desc = typeof fw==='object' ? fw.description||'' : '';
+      return `
+        <div class="ins-card" onclick='openEpisode(${JSON.stringify(ep.guest_name)})'>
+          <div class="card-byline">🛠️ ${esc(ep.guest_name)}</div>
+          <div class="card-quote" style="font-style:normal;border-left-color:var(--accent2)">${esc(name)}</div>
+          ${desc ? `<div class="card-insight">${esc(desc)}</div>` : ''}
+        </div>`;
+    })
+  ).join('');
+  setContent(`<div class="cards-grid">${cards}</div>`);
+}
+
+function openEpisode(guestName) {
+  const ep = episodes.find(e => e.guest_name === guestName);
+  if (!ep) return;
+
+  document.getElementById('mainContent').style.display = 'none';
+  document.getElementById('pageTitle').textContent = ep.guest_name;
+  document.getElementById('pageMeta').textContent = ep.title;
+
+  const themes = (ep.key_themes||[]).map(t => `
+    <div class="theme-row">
+      <div class="theme-name">${esc(t.theme)}</div>
+      <div class="theme-desc">${esc(t.description)}</div>
+      <div class="relevance">${Math.round((t.relevance_score||0)*100)}%</div>
+    </div>`).join('');
+
+  const insights = (ep.key_insights||[]).map(i => `
+    <div class="ins-full">
+      <blockquote>${esc(i.quote)}</blockquote>
+      <div class="insight-text">${esc(i.insight)}</div>
+      <div class="ins-meta">
+        <span class="ts">${esc(i.timestamp||'')}</span>
+        ${i.actionable ? '<span class="actionable-badge">Actionable</span>' : ''}
+        ${(i.topics||[]).slice(0,3).map(t=>`<span class="tag">${esc(t.replace(/-/g,' '))}</span>`).join('')}
+      </div>
+    </div>`).join('');
+
+  const fws = (ep.frameworks_mentioned||[]).map(fw => {
+    const n = typeof fw==='string' ? fw : fw.name;
+    return `<span class="fw-badge">${esc(n)}</span>`;
+  }).join('');
+
+  const detail = document.getElementById('epDetail');
+  detail.innerHTML = `
+    <button class="back-btn" onclick="goBack()">← Back</button>
+    <div class="ep-header">
+      <div class="guest-label">🎙️ ${esc(ep.guest_name)}</div>
+      <h1>${esc(ep.title)}</h1>
+      <p class="desc">${esc(ep.description||'')}</p>
+    </div>
+    ${themes ? `<div class="section-label">Key Themes</div><div class="themes-list">${themes}</div>` : ''}
+    <div class="section-label">${ep.key_insights?.length||0} Insights</div>
+    <div class="insights-full">${insights}</div>
+    ${fws ? `<div class="section-label">Frameworks</div><div class="fw-list">${fws}</div>` : ''}`;
+  detail.classList.add('visible');
+  window.scrollTo(0, 0);
+}
+
+let _lastLabel = 'Product Strategy';
+function goBack() {
+  document.getElementById('epDetail').classList.remove('visible');
+  document.getElementById('mainContent').style.display = '';
+  document.getElementById('pageTitle').textContent = _lastLabel;
+}
+
+function loadTopic(q, label) {
+  _lastLabel = label;
+  showSkeletons();
+  setMeta(label, 'Loading…');
+  setTimeout(() => showInsightCards(search(q), q, label), 0);
+}
+
+// ── EVENTS ──
+window.openEpisode = openEpisode;
+window.goBack = goBack;
+
+document.querySelectorAll('.nav-btn[data-q]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    loadTopic(btn.dataset.q, btn.dataset.label);
+  });
+});
+
+document.getElementById('btnEpisodes').addEventListener('click', () => {
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('btnEpisodes').classList.add('active');
+  _lastLabel = 'All Episodes';
+  showAllEpisodes();
+});
+
+document.getElementById('btnFrameworks').addEventListener('click', () => {
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('btnFrameworks').classList.add('active');
+  _lastLabel = 'Frameworks';
+  showFrameworks();
+});
+
+document.getElementById('searchBtn').addEventListener('click', () => {
+  const q = document.getElementById('searchInput').value.trim();
+  if (!q) return;
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  _lastLabel = `"${q}"`;
+  showSkeletons();
+  setMeta(`"${q}"`, 'Searching…');
+  setTimeout(() => showInsightCards(search(q), q, `"${q}"`), 0);
+});
+document.getElementById('searchInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('searchBtn').click();
+});
+
+// ── INIT ──
+init().catch(err => {
+  document.getElementById('statusLabel').textContent = 'Failed to load data';
+  document.getElementById('mainContent').innerHTML = `
+    <div class="state-box">
+      <div class="state-icon">⚠️</div>
+      <div class="state-title">Could not load episode data</div>
+      <div class="state-sub">Make sure <code>data/episodes.json</code> is present and you're serving this over HTTP (not file://).<br><br>Run: <code>npx serve .</code></div>
+    </div>`;
+});
+</script>
+</body>
+</html>

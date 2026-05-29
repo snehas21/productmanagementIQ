@@ -1,7 +1,7 @@
 {
   "name": "productmanagementiq",
   "version": "1.0.0",
-  "description": "PM insights from Lenny's Podcast via MCP",
+  "description": "PM insights from Lenny's Podcast",
   "main": "server.js",
   "type": "module",
   "scripts": {
@@ -9,8 +9,7 @@
     "dev": "node --watch server.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.0",
     "express": "^4.19.2",
-    "node-fetch": "^3.3.2"
+    "flexsearch": "^0.7.43"
   }
 }

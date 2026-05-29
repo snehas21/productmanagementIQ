@@ -293,6 +293,25 @@ function showTopicInsights(episodes, query, label) {
   setContent(`<div class="cards-grid">${cards.join('')}</div>`);
 }
 
+function renderTranscriptResults(results, query) {
+  if (!results.length) {
+    setContent(`<div class="state-box"><div class="state-icon">🔭</div><div class="state-title">No results</div><div class="state-sub">Try a different search term.</div></div>`);
+    setMeta(`"${query}"`, 'No results');
+    return;
+  }
+  setMeta(`"${query}"`, `${results.length} episodes matched across 303 transcripts`);
+  const cards = results.map(r => `
+    <div class="ins-card" style="cursor:default">
+      <div class="card-byline">🎙️ ${esc(r.guest)}</div>
+      <div class="card-quote">${esc(r.snippet)}</div>
+      <div class="card-footer">
+        <span class="card-ts">Transcript excerpt</span>
+        <div class="card-tags"><span class="tag" style="background:rgba(88,166,255,0.1);border-color:rgba(88,166,255,0.2);color:var(--blue)">303 episodes</span></div>
+      </div>
+    </div>`).join('');
+  setContent(`<div class="cards-grid">${cards}</div>`);
+}
+
 function showAllEpisodes() {
   setMeta('All Episodes', `${allEpisodes.length} episodes from Lenny's Podcast`);
   const rows = allEpisodes.map(ep => {
@@ -432,23 +451,14 @@ async function doSearch(q) {
   showSkeletons();
   setMeta(`"${q}"`, 'Searching…');
 
-  // Try live MCP first (303 episodes), fall back to curated (20 episodes)
-  if (mcpOnline) {
-    try {
-      const mcpData = await mcpSearch(q);
-      if (mcpData) {
-        const html = renderMCPResults(mcpData, q);
-        if (html) {
-          setMeta(`"${q}"`, `Live results from 303 Lenny's Podcast episodes`);
-          setContent(html);
-          return;
-        }
-      }
-    } catch { /* fall through */ }
+  const json = await fetch(`/api/search?q=${encodeURIComponent(q)}`).then(r => r.json());
+
+  if (json.source === 'transcripts') {
+    renderTranscriptResults(json.results, q);
+    return;
   }
 
-  const results = await searchEpisodes(q);
-  showTopicInsights(results, q, `"${q}"`);
+  showTopicInsights(json.results || [], q, `"${q}"`);
 }
 
 document.getElementById('searchBtn').addEventListener('click', () => {
@@ -460,58 +470,22 @@ document.getElementById('searchInput').addEventListener('keydown', e => {
 });
 
 // ── STATUS CHECK ──
-let mcpOnline = false;
-let mcpEpisodeCount = 0;
+let liveSearchReady = false;
 
 async function checkStatus() {
   try {
-    const r = await fetch('/api/status');
-    const s = await r.json();
-    mcpOnline = s.mcp;
-    mcpEpisodeCount = s.mcp ? 303 : s.bundled;
+    const s = await fetch('/api/status').then(r => r.json());
+    liveSearchReady = s.ready;
     const dot = document.getElementById('statusDot');
     const label = document.getElementById('statusLabel');
-    if (s.mcp) {
-      dot.className = 'dot online';
-      label.textContent = `MCP Connected · 303 episodes`;
-    } else {
-      dot.className = 'dot partial';
-      label.textContent = `${s.bundled} curated episodes`;
-    }
+    dot.className = s.ready ? 'dot online' : 'dot partial';
+    label.textContent = s.ready
+      ? `${s.episodes} episodes indexed`
+      : `${s.episodes} curated episodes · indexing…`;
+    if (!s.ready) setTimeout(checkStatus, 5000);
   } catch {
     document.getElementById('statusLabel').textContent = 'Offline';
   }
-}
-
-// MCP search returns raw transcript excerpts — parse and render them
-async function mcpSearch(q) {
-  const r = await fetch(`/api/mcp/search?q=${encodeURIComponent(q)}`);
-  const json = await r.json();
-  if (!json.ok) return null;
-  return json.data;
-}
-
-function renderMCPResults(mcpData, query) {
-  const text = (mcpData.content || []).map(c => c.text || '').join('\n');
-  if (!text.trim() || text.includes('No results')) return null;
-
-  // Split on episode boundaries (## Guest Name)
-  const blocks = text.split(/\n(?=##\s)/).filter(b => b.trim().length > 50);
-
-  const cards = blocks.slice(0, 18).map(block => {
-    const lines = block.split('\n').filter(l => l.trim());
-    const guestLine = lines.find(l => l.startsWith('##'))?.replace(/^##\s*/, '') || 'Guest';
-    const excerpts = lines.filter(l => !l.startsWith('#') && l.trim().length > 30);
-    const preview = excerpts.slice(0, 3).join(' ').trim();
-    return `
-      <div class="ins-card" style="cursor:default">
-        <div class="card-byline">🎙️ ${esc(guestLine)}</div>
-        <div class="card-quote">${esc(preview.slice(0, 300))}${preview.length > 300 ? '…' : ''}</div>
-        <div class="card-footer"><span class="card-ts">Live transcript</span><div class="card-tags"><span class="tag" style="background:rgba(88,166,255,0.1);border-color:rgba(88,166,255,0.2);color:var(--blue)">MCP</span></div></div>
-      </div>`;
-  }).join('');
-
-  return cards ? `<div class="cards-grid">${cards}</div>` : null;
 }
 
 // ── INIT ──

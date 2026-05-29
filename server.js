@@ -1,145 +1,235 @@
 import express from 'express';
-import { readFileSync } from 'fs';
-import { createRequire } from 'module';
+import { readFileSync, existsSync, mkdirSync, createWriteStream } from 'fs';
+import { readdir, readFile } from 'fs/promises';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import FlexSearch from 'flexsearch';
+
+const execAsync = promisify(exec);
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 app.use(express.json());
 app.use(express.static('public'));
 
-// ── LOCAL DATA (bundled from edisoncruz/lennys-wisdom-mcp) ──
-const episodes = JSON.parse(readFileSync('./data/episodes.json', 'utf8'));
+// ── BUNDLED CURATED DATA (20 episodes, always available instantly) ──
+const bundledEpisodes = JSON.parse(readFileSync('./data/episodes.json', 'utf8'));
 
-// ── MCP-STYLE TOOL IMPLEMENTATIONS ──
+// ── TRANSCRIPT STORE ──
+const TRANSCRIPTS_DIR = join(__dirname, 'transcripts');
+const GITHUB_ZIP = 'https://github.com/ChatPRD/lennys-podcast-transcripts/archive/refs/heads/main.zip';
 
-function list_episodes() {
-  const lines = episodes.map(ep => `${ep.guest_name} — ${ep.title}`);
-  return { content: [{ type: 'text', text: lines.join('\n') }] };
+let transcriptEpisodes = [];  // { guest, content }
+let searchIndex = null;
+let indexReady = false;
+
+// ── TRANSCRIPT HELPERS ──
+
+function stripFrontmatter(content) {
+  if (!content.startsWith('---')) return content;
+  const end = content.indexOf('---', 3);
+  return end === -1 ? content : content.slice(end + 3).trim();
 }
 
-function search_transcripts({ query }) {
-  const q = query.toLowerCase();
-  const results = [];
+function guestFromFrontmatter(content) {
+  if (!content.startsWith('---')) return null;
+  const end = content.indexOf('---', 3);
+  if (end === -1) return null;
+  const m = content.slice(0, end).match(/^guest:\s*(.+)$/m);
+  return m ? m[1].trim() : null;
+}
 
-  for (const ep of episodes) {
-    const matchingInsights = ep.key_insights.filter(ins =>
-      ins.quote.toLowerCase().includes(q) ||
-      ins.insight.toLowerCase().includes(q) ||
-      ins.context.toLowerCase().includes(q) ||
-      ins.topics.some(t => t.toLowerCase().includes(q))
-    );
+function folderToGuest(folder) {
+  return folder.replace(/[-_]\d+$/, '').split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
+}
 
-    const themeMatch = ep.key_themes?.filter(t =>
-      t.theme.toLowerCase().includes(q) || t.description.toLowerCase().includes(q)
-    ) || [];
+function extractSnippet(content, terms, len = 600) {
+  const lower = content.toLowerCase();
+  let best = -1;
+  for (const t of terms) {
+    const pos = lower.indexOf(t.toLowerCase());
+    if (pos !== -1 && (best === -1 || pos < best)) best = pos;
+  }
+  const start = best === -1 ? Math.min(2000, content.length) : Math.max(0, best - 200);
+  const end = Math.min(content.length, start + len);
+  let snippet = content.slice(start, end);
+  if (start > 0) snippet = '…' + snippet;
+  if (end < content.length) snippet += '…';
+  return snippet.trim();
+}
 
-    const topicMatch = ep.topics?.some(t => t.toLowerCase().includes(q));
-    const titleMatch = ep.title.toLowerCase().includes(q) || ep.description.toLowerCase().includes(q);
+// ── DOWNLOAD + INDEX ──
 
-    if (matchingInsights.length > 0 || themeMatch.length > 0 || topicMatch || titleMatch) {
-      const insightsToShow = matchingInsights.length > 0 ? matchingInsights : ep.key_insights.slice(0, 3);
-      results.push({
-        guest: ep.guest_name,
-        title: ep.title,
-        insights: insightsToShow.slice(0, 4),
-        themes: themeMatch.slice(0, 2),
-        topics: ep.topics,
-      });
+async function downloadTranscripts() {
+  if (existsSync(TRANSCRIPTS_DIR)) {
+    const entries = await readdir(TRANSCRIPTS_DIR, { withFileTypes: true });
+    if (entries.filter(e => e.isDirectory()).length > 100) {
+      console.log('Transcripts already cached.');
+      return;
     }
   }
 
-  if (results.length === 0) {
-    return { content: [{ type: 'text', text: `No results found for "${query}"` }] };
+  console.log('Downloading transcripts from GitHub (~9 MB)…');
+  mkdirSync(TRANSCRIPTS_DIR, { recursive: true });
+
+  const zipPath = '/tmp/lenny-transcripts.zip';
+  const response = await fetch(GITHUB_ZIP, { headers: { 'User-Agent': 'productmanagementiq/1.0' } });
+  if (!response.ok) throw new Error(`Download failed: ${response.status}`);
+
+  const writer = createWriteStream(zipPath);
+  const reader = response.body.getReader();
+  let bytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    writer.write(value);
+    bytes += value.length;
   }
+  writer.end();
+  console.log(`Downloaded ${Math.round(bytes / 1024 / 1024)} MB`);
 
-  const text = results.slice(0, 12).map(r => {
-    const insightLines = r.insights.map(i =>
-      `• "${i.quote}"\n  → ${i.insight}`
-    ).join('\n\n');
-    return `## ${r.guest}\n**${r.title}**\n\n${insightLines}`;
-  }).join('\n\n---\n\n');
-
-  return { content: [{ type: 'text', text }] };
+  const tmp = '/tmp/lenny-extract';
+  await execAsync(`rm -rf "${tmp}"`);
+  await execAsync(`unzip -o "${zipPath}" -d "${tmp}"`);
+  await execAsync(`cp -r "${tmp}/lennys-podcast-transcripts-main/episodes/"* "${TRANSCRIPTS_DIR}/"`);
+  await execAsync(`rm -rf "${tmp}" "${zipPath}"`);
+  console.log('Transcripts extracted.');
 }
 
-function get_episode({ guest }) {
-  const ep = episodes.find(e =>
-    e.guest_name.toLowerCase().includes(guest.toLowerCase()) ||
-    e.id.toLowerCase().includes(guest.toLowerCase())
-  );
+async function loadAndIndex() {
+  const entries = await readdir(TRANSCRIPTS_DIR, { withFileTypes: true });
+  const dirs = entries.filter(e => e.isDirectory());
+  console.log(`Indexing ${dirs.length} episodes…`);
 
-  if (!ep) {
-    return { content: [{ type: 'text', text: `Episode not found: ${guest}` }] };
+  const episodes = [];
+  for (const dir of dirs) {
+    const path = join(TRANSCRIPTS_DIR, dir.name, 'transcript.md');
+    try {
+      const raw = await readFile(path, 'utf8');
+      const guest = guestFromFrontmatter(raw) || folderToGuest(dir.name);
+      const content = stripFrontmatter(raw);
+      episodes.push({ guest, content });
+    } catch { /* skip dirs without transcript.md */ }
   }
 
-  const insightLines = ep.key_insights.map(i =>
-    `• [${i.timestamp}] "${i.quote}"\n  → ${i.insight}`
-  ).join('\n\n');
+  const idx = new FlexSearch.Document({
+    document: { id: 'guest', index: ['guest', 'content'], store: ['guest', 'content'] },
+    tokenize: 'forward',
+    resolution: 9,
+    cache: true,
+  });
+  for (const ep of episodes) idx.add(ep);
 
-  const themes = ep.key_themes?.map(t => `• ${t.theme}: ${t.description}`).join('\n') || '';
+  transcriptEpisodes = episodes;
+  searchIndex = idx;
+  indexReady = true;
+  console.log(`Index ready: ${episodes.length} episodes`);
+}
 
-  const text = `# ${ep.guest_name}\n**${ep.title}**\n\n${ep.description}\n\n## Key Themes\n${themes}\n\n## Insights\n${insightLines}`;
+async function initTranscripts() {
+  try {
+    await downloadTranscripts();
+    await loadAndIndex();
+  } catch (err) {
+    console.error('Transcript init failed, using bundled data:', err.message);
+  }
+}
 
-  return { content: [{ type: 'text', text }] };
+initTranscripts();
+
+// ── SEARCH ──
+
+function searchTranscripts(query, limit = 10) {
+  if (!indexReady) return [];
+  const results = searchIndex.search(query, { limit: limit * 2, enrich: true });
+  const terms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+  const seen = new Set();
+  const out = [];
+
+  for (const field of results) {
+    for (const item of (field.result || [])) {
+      const guest = typeof item === 'string' ? item : (item.id || item.doc?.guest);
+      if (!guest || seen.has(guest)) continue;
+      seen.add(guest);
+      const ep = transcriptEpisodes.find(e => e.guest === guest);
+      if (!ep) continue;
+      out.push({ guest, snippet: extractSnippet(ep.content, terms) });
+      if (out.length >= limit) break;
+    }
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function getEpisode(guest) {
+  return transcriptEpisodes.find(e => e.guest.toLowerCase().includes(guest.toLowerCase()));
+}
+
+// ── BUNDLED SEARCH (curated 20 episodes) ──
+
+function bundledSearch(q) {
+  const query = q.toLowerCase();
+  return bundledEpisodes.filter(ep =>
+    ep.title.toLowerCase().includes(query) ||
+    ep.description.toLowerCase().includes(query) ||
+    (ep.topics || []).some(t => t.toLowerCase().includes(query)) ||
+    (ep.key_themes || []).some(t => t.theme.toLowerCase().includes(query) || t.description.toLowerCase().includes(query)) ||
+    ep.key_insights.some(i =>
+      i.quote.toLowerCase().includes(query) ||
+      i.insight.toLowerCase().includes(query) ||
+      (i.topics || []).some(t => t.toLowerCase().includes(query))
+    )
+  ).map(ep => {
+    const matched = ep.key_insights.filter(i =>
+      i.quote.toLowerCase().includes(query) ||
+      i.insight.toLowerCase().includes(query) ||
+      (i.topics || []).some(t => t.toLowerCase().includes(query))
+    );
+    return { ...ep, _matched_insights: matched.length ? matched : ep.key_insights.slice(0, 3) };
+  }).slice(0, 20);
 }
 
 // ── REST API ──
 
-app.get('/api/episodes', (req, res) => {
-  try {
-    res.json({ ok: true, data: list_episodes() });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
-  }
+app.get('/api/status', (req, res) => {
+  res.json({
+    ready: indexReady,
+    episodes: indexReady ? transcriptEpisodes.length : bundledEpisodes.length,
+    source: indexReady ? 'transcripts' : 'bundled',
+  });
 });
 
 app.get('/api/search', (req, res) => {
   const { q } = req.query;
-  if (!q) return res.status(400).json({ ok: false, error: 'q parameter required' });
-  try {
-    res.json({ ok: true, data: search_transcripts({ query: q }) });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
+  if (!q) return res.status(400).json({ ok: false, error: 'q required' });
+
+  if (indexReady) {
+    const results = searchTranscripts(q);
+    return res.json({ ok: true, source: 'transcripts', results });
   }
+  res.json({ ok: true, source: 'bundled', results: bundledSearch(q) });
 });
 
 app.get('/api/episode/:guest', (req, res) => {
-  try {
-    res.json({ ok: true, data: get_episode({ guest: req.params.guest }) });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
+  if (indexReady) {
+    const ep = getEpisode(req.params.guest);
+    if (ep) return res.json({ ok: true, source: 'transcripts', guest: ep.guest, content: ep.content });
   }
+  const ep = bundledEpisodes.find(e => e.guest_name.toLowerCase().includes(req.params.guest.toLowerCase()));
+  if (!ep) return res.status(404).json({ ok: false, error: 'Not found' });
+  res.json({ ok: true, source: 'bundled', data: ep });
 });
 
-// Raw structured data endpoints for the frontend
-app.get('/api/data/episodes', (req, res) => res.json(episodes));
+// Structured curated data (always available for the insights UI)
+app.get('/api/data/episodes', (req, res) => res.json(bundledEpisodes));
 
 app.get('/api/data/search', (req, res) => {
   const { q } = req.query;
-  if (!q) return res.status(400).json([]);
-  const query = q.toLowerCase();
-  const out = [];
-
-  for (const ep of episodes) {
-    const matchingInsights = ep.key_insights.filter(ins =>
-      ins.quote.toLowerCase().includes(query) ||
-      ins.insight.toLowerCase().includes(query) ||
-      (ins.topics||[]).some(t => t.toLowerCase().includes(query))
-    );
-    const topicMatch = ep.topics?.some(t => t.toLowerCase().includes(query));
-    const titleMatch = ep.title.toLowerCase().includes(query) || ep.description.toLowerCase().includes(query);
-    const themeMatch = ep.key_themes?.some(t =>
-      t.theme.toLowerCase().includes(query) || t.description.toLowerCase().includes(query)
-    );
-
-    if (matchingInsights.length > 0 || topicMatch || titleMatch || themeMatch) {
-      out.push({
-        ...ep,
-        _matched_insights: matchingInsights.length > 0 ? matchingInsights : ep.key_insights.slice(0, 3),
-      });
-    }
-  }
-  res.json(out.slice(0, 20));
+  if (!q) return res.json([]);
+  res.json(bundledSearch(q));
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`ProductManagementIQ running on http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`ProductManagementIQ on http://localhost:${PORT}`));

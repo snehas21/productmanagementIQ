@@ -171,21 +171,27 @@ function getEpisode(guest) {
 
 function bundledSearch(q) {
   const query = q.toLowerCase();
+  const words = query.split(/\s+/).filter(Boolean);
+  // Normalize a string for matching: lowercase and replace hyphens/underscores with spaces
+  const norm = s => s.toLowerCase().replace(/[-_]/g, ' ');
+  const matchesQuery = s => norm(s).includes(query) || words.every(w => norm(s).includes(w));
+  const topicMatches = t => norm(t).includes(query) || words.some(w => norm(t).includes(w));
+
   return bundledEpisodes.filter(ep =>
-    ep.title.toLowerCase().includes(query) ||
-    ep.description.toLowerCase().includes(query) ||
-    (ep.topics || []).some(t => t.toLowerCase().includes(query)) ||
-    (ep.key_themes || []).some(t => t.theme.toLowerCase().includes(query) || t.description.toLowerCase().includes(query)) ||
+    matchesQuery(ep.title) ||
+    matchesQuery(ep.description) ||
+    (ep.topics || []).some(topicMatches) ||
+    (ep.key_themes || []).some(t => matchesQuery(t.theme) || matchesQuery(t.description)) ||
     ep.key_insights.some(i =>
-      i.quote.toLowerCase().includes(query) ||
-      i.insight.toLowerCase().includes(query) ||
-      (i.topics || []).some(t => t.toLowerCase().includes(query))
+      matchesQuery(i.quote) ||
+      matchesQuery(i.insight) ||
+      (i.topics || []).some(topicMatches)
     )
   ).map(ep => {
     const matched = ep.key_insights.filter(i =>
-      i.quote.toLowerCase().includes(query) ||
-      i.insight.toLowerCase().includes(query) ||
-      (i.topics || []).some(t => t.toLowerCase().includes(query))
+      matchesQuery(i.quote) ||
+      matchesQuery(i.insight) ||
+      (i.topics || []).some(topicMatches)
     );
     return { ...ep, _matched_insights: matched.length ? matched : ep.key_insights.slice(0, 3) };
   }).slice(0, 20);

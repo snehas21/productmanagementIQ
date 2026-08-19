@@ -60,7 +60,8 @@
     .card-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; }
     .card-ts { font-size: 0.72rem; color: var(--muted); }
     .card-tags { display: flex; gap: 5px; flex-wrap: wrap; }
-    .tag { font-size: 0.68rem; padding: 2px 8px; border-radius: 50px; background: rgba(139,92,246,0.12); border: 1px solid rgba(139,92,246,0.2); color: #a78bfa; font-weight: 600; }
+    .tag { font-size: 0.68rem; padding: 2px 8px; border-radius: 50px; background: rgba(139,92,246,0.12); border: 1px solid rgba(139,92,246,0.2); color: #a78bfa; font-weight: 600; cursor: pointer; transition: background 0.15s, color 0.15s; }
+    .tag[data-topic]:hover { background: rgba(139,92,246,0.24); }
     .actionable-badge { font-size: 0.68rem; padding: 2px 8px; border-radius: 50px; background: rgba(63,185,80,0.1); border: 1px solid rgba(63,185,80,0.25); color: var(--green); font-weight: 700; }
 
     .ep-list { display: flex; flex-direction: column; gap: 10px; }
@@ -216,7 +217,7 @@ function search(q) {
 
 // ── HELPERS ──
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-function topicTag(t) { return `<span class="tag">${esc(t.replace(/-/g,' '))}</span>`; }
+function topicTag(t) { return `<span class="tag" data-topic="${esc(t)}">${esc(t.replace(/-/g,' '))}</span>`; }
 
 function getMatchedInsights(ep, q) {
   if (!q) return ep.key_insights.slice(0, 3);
@@ -329,7 +330,7 @@ function openEpisode(guestName) {
       <div class="ins-meta">
         <span class="ts">${esc(i.timestamp||'')}</span>
         ${i.actionable ? '<span class="actionable-badge">Actionable</span>' : ''}
-        ${(i.topics||[]).slice(0,3).map(t=>`<span class="tag">${esc(t.replace(/-/g,' '))}</span>`).join('')}
+        ${(i.topics||[]).slice(0,3).map(topicTag).join('')}
       </div>
     </div>`).join('');
 
@@ -367,6 +368,24 @@ function loadTopic(q, label) {
   setMeta(label, 'Loading…');
   setTimeout(() => showInsightCards(search(q), q, label), 0);
 }
+
+// ── TAG CLICK (filter by topic) ──
+function filterByTopic(topic) {
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  const q = topic.replace(/-/g,' ');
+  const label = q.replace(/\b\w/g, c => c.toUpperCase());
+  _lastLabel = label;
+  showSkeletons();
+  setMeta(label, 'Loading…');
+  setTimeout(() => showInsightCards(search(q), q, label), 0);
+}
+
+document.addEventListener('click', e => {
+  const tagEl = e.target.closest('.tag[data-topic]');
+  if (!tagEl) return;
+  e.stopPropagation();
+  filterByTopic(tagEl.dataset.topic);
+}, true);
 
 // ── EVENTS ──
 window.openEpisode = openEpisode;

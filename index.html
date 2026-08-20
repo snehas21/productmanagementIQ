@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ProductManagementIQ – Lenny's Podcast Insights</title>
-  <script src="https://cdn.jsdelivr.net/npm/flexsearch@0.7.43/dist/flexsearch.bundle.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flexsearch@0.7.43/dist/flexsearch.bundle.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -199,16 +199,23 @@ async function init() {
 
 function search(q) {
   if (!searchIdx) return [];
-  const results = searchIdx.search(q, { limit: 40, enrich: true });
+  // Search each word separately and union the results (OR across words), since
+  // FlexSearch's default multi-word query requires every word to match, which
+  // fails category queries like "user research discovery" whose words never
+  // all appear together in the same episode.
+  const words = q.split(/\s+/).filter(Boolean);
   const seen = new Set();
   const out = [];
-  for (const field of results) {
-    for (const item of (field.result || [])) {
-      const id = item.id || item;
-      if (seen.has(id)) continue;
-      seen.add(id);
-      const ep = episodes.find(e => e.id === id);
-      if (ep) out.push(ep);
+  for (const word of words) {
+    const results = searchIdx.search(word, { limit: 40, enrich: true });
+    for (const field of results) {
+      for (const item of (field.result || [])) {
+        const id = item.id || item;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        const ep = episodes.find(e => e.id === id);
+        if (ep) out.push(ep);
+      }
     }
   }
   return out;
